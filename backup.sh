@@ -18,7 +18,6 @@ TAR_FILES_NUM="3";
 MIN_DAYS="2";
 # ======================================
  
- 
 # Convert a UNIX timestamp to
 # date format.
 function stamp_to_date
@@ -39,6 +38,10 @@ do
 	case $arg in
 		--force|-f)
 			force="yes";
+			;;
+		--no-fetch|-n)
+			nofetch="yes";
+			;;
 	esac
 done;
 
@@ -54,19 +57,27 @@ then
 	exit;
 fi
 
-exit;
-
 cd ${BACKUP_DIR}
- 
-echo "Fetching $BACKUP_LIST..." | tee -a ../logfile.log;
-rsync ${RSYNC_OPTIONS} ${USER}@${DOMAIN}:${BACKUP_LIST_REMOTE_DIR}/${BACKUP_LIST} ./;
-echo "$BACKUP_LIST fetched" | tee -a ../logfile.log;
+
+
+# Fetch backup list file from server
+if [ "${nofetch}" != "yes" ];
+then
+	echo "Fetching $BACKUP_LIST..." | tee -a logfile.log;
+	rsync ${RSYNC_OPTIONS} ${USER}@${DOMAIN}:${BACKUP_LIST_REMOTE_DIR}/${BACKUP_LIST} ./;
+	if [ $? -ne 0 ];
+	then
+		echo "${BACKUP_LIST} not fetched. Exiting" | tee -a logfile.log;
+		exit;
+	fi
+	echo "$BACKUP_LIST fetched" | tee -a logfile.log;
+fi
  
 # Init logfile
 echo "$(date):" >> logfile.log;
  
-#Delete old files
-FILES_COUNT=`ls *.tar.gz -1 | wc -l`;
+# Delete old files
+FILES_COUNT=$(ls *.tar.gz -1 2> /dev/null | wc -l);
 if [ ${FILES_COUNT} -gt ${TAR_FILES_NUM} ];
 then
 	FILES_TO_DEL=$[${FILES_COUNT} - ${TAR_FILES_NUM}]
@@ -74,45 +85,51 @@ then
 	echo "Deleted ${FILES_TO_DEL} files" | tee -a logfile.log;
 fi
  
-# Exit if the backup list file doesn't exist
+# Exit if the backup list file doesn't exist.
 if [ ! -f "${BACKUP_LIST}" ];
 then
 	echo "Backup list file doesn't exist" | tee -a logfile.log;
 	exit;
 fi
- 
-# Check if this is the first run
+
+# Check if this is the first run.
 if [ -d cur ];
 then	
-	DATE=$(stamp_to_date $(cat cur/date.txt));
- 
-	# Check if we are running in a always online machine or
-	# the MIN_DAYS have passed or the --force arg is set.
-	if [ "$MIN_DAYS" = "0" -o $(days_since $(cat cur/date.txt)) -ge ${MIN_DAYS} -o "${force}" = "yes" ];
+	if [ -f "cur/date.txt" ];
 	then
-		# Check if a backup was taken today
-		if [ ! -f "${BACKUP_NAME}-${DATE}.tar.gz" ];
+		DATE=$(stamp_to_date $(cat cur/date.txt));
+		# Check if we are running in a always online machine or
+		# the MIN_DAYS have passed or the --force arg is set.
+		if [ "$MIN_DAYS" = "0" -o $(days_since $(cat cur/date.txt)) -ge ${MIN_DAYS} -o "${force}" = "yes" ];
 		then
-			echo "Creating Tar File..." | tee -a logfile.log;
-			tar -czf "${BACKUP_NAME}-${DATE}.tar.gz" cur/*;
-			echo "Tar File Creation Finished" | tee -a logfile.log;
+			# Check if a backup was taken today
+			if [ ! -f "${BACKUP_NAME}-${DATE}.tar.gz" ];
+			then
+				echo "Creating Tar File..." | tee -a logfile.log;
+				tar -czf "${BACKUP_NAME}-${DATE}.tar.gz" cur/*;
+				echo "Tar File Creation Finished" | tee -a logfile.log;
+			else
+				echo "Skiping Tar File Creation" | tee -a logfile.log;
+			fi
 		else
-			echo "Skiping Tar File Creation" | tee -a logfile.log;
+			echo "${MIN_DAYS} days didn't pass since the last backup" | tee -a logfile.log;
+			exit;
 		fi
-	else
-		echo "${MIN_DAYS} days didn't pass since the last backup" | tee -a logfile.log;
-		exit;
 	fi
 else
 	mkdir cur;
 fi
- 
+
 cd cur;
- 
-echo `date +%s` > date.txt;
  
 echo "Backup Started..." | tee -a ../logfile.log;
 rsync ${RSYNC_OPTIONS} --stats --include-from=${BACKUP_DIR}/${BACKUP_LIST} ${USER}@${DOMAIN}:/ ./ | tee -a ../logfile.log;
-echo "Backup Finished" | tee -a ../logfile.log;
- 
-mv ../logfile.log ./;
+# If a backup was taken, generate timestamp and mv logfile.
+if [ ${PIPESTATUS[0]} -eq 0 ];
+then
+	echo `date +%s` > date.txt;
+	echo "Backup Finished" | tee -a ../logfile.log;
+	mv ../logfile.log ./;
+else
+	echo "Backup not taken!" | tee -a ../logfile.log;
+fi
