@@ -3,7 +3,7 @@
 # =========== BACKUP SCRIPT ============
 # Author: Constantinos Xanthopoulos
 #         <conx@xathopoulos.info>
-# Version: 1.0
+# Version: 1.0.1
 # ======================================
  
 # ========== CONFIGURATIONS ============
@@ -41,14 +41,21 @@ do
 			force="yes";
 	esac
 done;
- 
-# Exit if the directory file doesn' t exist
-if [ ! -d ${BACKUP_DIR} ];
+
+# Exit if the script isn't configured properly or
+# the directory file doesn' t exist
+if [ -z "${BACKUP_NAME}" -o -z "${BACKUP_DIR}" -o -z "${BACKUP_LIST}" -o -z "${BACKUP_LIST_REMOTE_DIR}" -o -z "${USER}" -o -z "${DOMAIN}" -o -z "${TAR_FILES_NUM}" -o -z "${MIN_DAYS}" ];
 then
-	echo "Backup directory doesn't exist";
+	echo "Error: Set the configuration options and try again";
+	exit;
+elif [ ! -d "${BACKUP_DIR}" ];
+then
+	echo "Error: Backup directory doesn't exist";
 	exit;
 fi
- 
+
+exit;
+
 cd ${BACKUP_DIR}
  
 echo "Fetching $BACKUP_LIST..." | tee -a ../logfile.log;
@@ -68,7 +75,7 @@ then
 fi
  
 # Exit if the backup list file doesn't exist
-if [ ! -f ${BACKUP_LIST} ];
+if [ ! -f "${BACKUP_LIST}" ];
 then
 	echo "Backup list file doesn't exist" | tee -a logfile.log;
 	exit;
